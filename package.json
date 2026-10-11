@@ -36,6 +36,7 @@
     "clean": "node -e \"for (const d of ['dist','build-test']) require('node:fs').rmSync(d, { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "test": "npm run build && tsc -p tsconfig.test.json && node --test build-test/test/*.test.js",
+    "prepare": "npm run build",
     "prepublishOnly": "npm test"
   },
   "keywords": [
