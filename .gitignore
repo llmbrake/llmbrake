@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build-test/
+coverage/
+*.tgz
+*.log
+.DS_Store
+.env

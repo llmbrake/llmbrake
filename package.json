@@ -1,0 +1,57 @@
+{
+  "name": "llmbrake",
+  "version": "0.1.0",
+  "description": "Per-customer monthly USD budgets for OpenAI-compatible chat calls: track cost, auto-downgrade near the cap, block at the cap.",
+  "license": "MIT",
+  "author": "LLMBrake contributors",
+  "homepage": "https://llmbrake.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/llmbrake/llmbrake.git"
+  },
+  "bugs": {
+    "url": "https://github.com/llmbrake/llmbrake/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "clean": "node -e \"for (const d of ['dist','build-test']) require('node:fs').rmSync(d, { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test build-test/test/*.test.js",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "openai",
+    "anthropic",
+    "llm",
+    "ai",
+    "cost",
+    "budget",
+    "usage",
+    "quota",
+    "rate-limit",
+    "saas"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.6.0"
+  }
+}
