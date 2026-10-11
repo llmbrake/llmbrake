@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+### Changed
+
+- Docs: install from npm (`npm install llmbrake`) and add an npm version badge.
+- Build on git install: a `prepare` script builds `dist/`, so `npm install github:llmbrake/llmbrake` works.
+
 ## [0.1.0] - 2026-10-11
 
 ### Added

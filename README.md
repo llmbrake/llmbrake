@@ -2,6 +2,7 @@
 
 **Per-customer cost caps for AI apps: put a monthly dollar budget on every customer, switch them to a cheaper model near the cap, and block them at the cap.**
 
+[![npm version](https://img.shields.io/npm/v/llmbrake.svg)](https://www.npmjs.com/package/llmbrake)
 [![CI](https://github.com/llmbrake/llmbrake/actions/workflows/ci.yml/badge.svg)](https://github.com/llmbrake/llmbrake/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -18,6 +19,8 @@ Status: `0.1.0`, early. Website: [llmbrake.com](https://llmbrake.com)
 ```bash
 npm install llmbrake
 ```
+
+Published on npm as [`llmbrake`](https://www.npmjs.com/package/llmbrake). To try the latest `main` instead, run `npm install github:llmbrake/llmbrake` (it builds on install).
 
 `llmbrake` is ESM-only (`import`, not `require`).
 
