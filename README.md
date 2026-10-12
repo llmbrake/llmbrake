@@ -131,6 +131,24 @@ const guard = createGuard({ budgetUsd: 5, store: redisStore });
 
 `INCRBYFLOAT` is atomic, so totals stay correct across instances. If the store throws (or returns a non-numeric value), calls **fail open** by default so your product keeps working; set `failOpen: false` to fail closed instead.
 
+## Shared budgets across servers (`HostedStore`)
+
+`HostedStore` keeps the counters in LLMBrake Cloud, so every server and serverless instance using your project's API key shares one counter per customer, and budgets you edit in the dashboard apply on the next call, with no Redis to run:
+
+```ts
+import { createGuard, HostedStore } from "llmbrake";
+
+const guard = createGuard({
+  budgetUsd: 5, // default; a budget set in the dashboard for a customer wins
+  downgradeMap: { "gpt-5.5": "gpt-5.4-mini" },
+  store: new HostedStore({ apiKey: process.env.LLMBRAKE_API_KEY! }),
+});
+```
+
+It also closes the concurrent-overshoot gap: before each call the guard **reserves** an estimate of the call's cost (prompt size plus `max_tokens`, or `estimateUsd`), and the reservation only succeeds if spend plus other in-flight reservations is under the budget, in one atomic step on the server. After the call it **settles** the real cost and releases the hold (failed provider calls release it at $0). Parallel calls can then overshoot by at most about one call, instead of by everything in flight. If the API is unreachable the guard follows `failOpen` (default: let the call through).
+
+Any store can opt in to this by implementing `reserve` and `settle` (the `ReservingStore` interface).
+
 ## Options
 
 `createGuard(options)` returns `{ wrap, check, status }`.
@@ -146,6 +164,7 @@ const guard = createGuard({ budgetUsd: 5, store: redisStore });
 | `unknownModel` | `"throw"` | Model missing from `prices`: `"throw"` an `UnknownModelPriceError` before the call, or `"allow"` it and record `costUsd: null`. |
 | `failOpen` | `true` | If the store errors: `true` lets calls through, `false` rethrows. |
 | `now` | `() => new Date()` | Clock override, mainly for tests. |
+| `estimateUsd` | estimated | Reserving stores only (`HostedStore`): USD to hold while a call is in flight, a number or `(ctx, params) => number`. Default: prompt length / 4 tokens plus `max_completion_tokens`/`max_tokens` (or 1,000) at the requested model's price. |
 
 The call context passed as the second argument to the wrapped function is `{ customerId: string; plan?: string; feature?: string }`.
 
@@ -171,7 +190,7 @@ Dated snapshot IDs such as `gpt-5.4-mini-2026-03-17` fall back to the undated en
 
 ## Known limitations
 
-- **Concurrent overshoot.** The budget is checked before a call and the cost is recorded after it. Several in-flight calls for the same customer can each pass the check, so the cap can be overshot by roughly the cost of those concurrent calls. Keep a margin in your budgets if this matters.
+- **Concurrent overshoot.** With `MemoryStore` or a plain `UsageStore`, the budget is checked before a call and the cost is recorded after it, so several in-flight calls for the same customer can each pass the check and overshoot the cap by roughly their combined cost. `HostedStore` (or any `ReservingStore`) reserves before each call, which bounds the overshoot to about one call.
 - **Prices need verification.** See above. Long-context tiers, batch discounts, regional or data-residency uplifts and priority tiers are not modeled, and the Anthropic IDs in the default table may differ from what your endpoint accepts.
 - **Chat completions only.** Only chat-completions-style token usage is metered: no images, audio, embeddings or tool fees yet.
 - **Streaming needs usage.** If a provider ignores `include_usage`, or a stream is abandoned before the usage chunk arrives, that call is recorded with zero cost.
@@ -189,9 +208,9 @@ pip install "git+https://github.com/llmbrake/llmbrake#subdirectory=python"
 
 See [python/README.md](python/README.md) for the quickstart.
 
-## Hosted dashboard (coming)
+## Hosted dashboard (LLMBrake Cloud)
 
-The library is free and stays MIT licensed. We're building an optional hosted dashboard on top of it: cost per customer, feature and model, shared counters, alerts near and at caps, and AI cost vs. Stripe revenue per customer. It is **not available yet**; join the waitlist at [llmbrake.com](https://llmbrake.com).
+The library is free and stays MIT licensed. LLMBrake Cloud is the optional paid layer on top: shared counters (`HostedStore`), a dashboard with spend, budget and status per customer (edit budgets live), Slack/webhook alerts at 80% and 100%, and AI cost vs. Stripe revenue per customer. See [llmbrake.com](https://llmbrake.com).
 
 ## Contributing
 

@@ -126,6 +126,20 @@ class MyStore:
 
 (or the same with `async def`, for async calls only). Redis `INCRBYFLOAT` is atomic, so totals stay correct across instances. If the store raises (or returns a non-numeric value), calls **fail open** by default so your product keeps working; set `fail_open=False` to fail closed instead.
 
+## Shared budgets across servers (`HostedStore`)
+
+`llmbrake.hosted.HostedStore` keeps counters in LLMBrake Cloud: every process using your project's API key shares one counter per customer, and budgets edited in the dashboard apply on the next call. No extra dependencies.
+
+```python
+import os
+from llmbrake import create_guard
+from llmbrake.hosted import HostedStore  # AsyncHostedStore for asyncio apps
+
+guard = create_guard(5, store=HostedStore(os.environ["LLMBRAKE_API_KEY"]))
+```
+
+Before each call the guard reserves an estimated cost (`estimate_usd`, default from prompt size plus `max_tokens`) and the server admits it only if spend plus other in-flight reservations is under budget, atomically; after the call it settles the real cost. Concurrent overshoot is bounded to about one call. Any store with `reserve`/`settle` methods (`ReservingStore`) gets this behavior.
+
 ## Options
 
 `create_guard(budget_usd, **options)` returns a `Guard` with `wrap`, `wrap_async`, `check`, `acheck`, `status`, `astatus`.

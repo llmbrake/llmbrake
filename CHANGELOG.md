@@ -4,7 +4,13 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [0.2.0] - Unreleased
+
 ### Added
+
+- `HostedStore`: shared per-customer counters in LLMBrake Cloud (one API key, every server). Dashboard budget overrides apply on the next call.
+- `ReservingStore` interface (`reserve` / `settle`), detected automatically by the guard: wrapped calls reserve an estimated cost atomically before the provider call and settle the real cost after it, bounding concurrent overshoot to about one call. Failed provider calls (and unknown downgrade targets) release the hold.
+- `estimateUsd` option and exported `estimateCallUsd()` used to size reservations.
 
 - `examples/` with tested integrations for the Vercel AI SDK (`generateText`/`streamText`), OpenRouter and LangChain.js, run in CI on Node 22 against mock providers.
 - Python port in `python/` (`llmbrake` 0.1.0 for Python, not yet on PyPI) with its own CI workflow. See [python/CHANGELOG.md](python/CHANGELOG.md).

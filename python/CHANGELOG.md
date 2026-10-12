@@ -2,6 +2,15 @@
 
 All notable changes to the Python package are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - Unreleased
+
+### Added
+
+- `llmbrake.hosted.HostedStore` / `AsyncHostedStore` (stdlib only): shared counters in LLMBrake Cloud; dashboard budget overrides apply on the next call.
+- `ReservingStore` protocol (`reserve` / `settle`) and `Reservation`, detected automatically: wrapped calls reserve an estimated cost atomically before the provider call and settle after it, bounding concurrent overshoot to about one call. Provider errors release the hold.
+- `estimate_usd` option on `create_guard` and `estimate_call_usd()`.
+- `Decision.hold_id` (defaults to `None`).
+
 ## [0.1.0] - Unreleased
 
 First Python release, a port of the TypeScript `llmbrake` 0.1.0.

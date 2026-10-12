@@ -22,7 +22,7 @@ from typing import (
 
 from ._errors import BudgetExceededError, UnknownModelPriceError
 from ._prices import DEFAULT_PRICES, PriceTable, _field, compute_cost_usd, usage_tokens
-from ._store import AsyncUsageStore, MemoryStore, UsageStore
+from ._store import AsyncUsageStore, MemoryStore, UsageStore, is_reserving_store
 from ._stream import GuardedAsyncStream, GuardedStream
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "Guard",
     "create_guard",
     "period_of",
+    "estimate_call_usd",
 ]
 
 R = TypeVar("R")
@@ -84,6 +85,8 @@ class Decision:
     #: The model to actually call (the downgrade target if ``downgraded``).
     model: str
     downgraded: bool
+    #: Reservation id when the store is a reserving store (e.g. HostedStore); settled after the call.
+    hold_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ class BudgetStatus:
 
 
 BudgetFn = Callable[[CallContext], Union[float, Awaitable[float]]]
+EstimateFn = Callable[[CallContext, Mapping[str, Any]], float]
 OnUsage = Callable[[UsageEvent], Union[None, Awaitable[None]]]
 UnknownModelPolicy = Literal["throw", "allow"]
 
@@ -106,6 +110,26 @@ def period_of(d: datetime) -> str:
     """
     d = _to_utc(d)
     return f"{d.year:04d}-{d.month:02d}"
+
+
+def estimate_call_usd(model: str, params: Mapping[str, Any], prices: Optional[PriceTable] = None) -> float:
+    """Rough cost estimate used only to size reservations: prompt ~4 chars/token, plus
+    ``max_completion_tokens``/``max_tokens`` (default 1,000) output tokens at ``model``'s price."""
+    import json
+
+    try:
+        chars = len(
+            json.dumps(params.get("messages") or params.get("input") or params.get("prompt") or "", default=str)
+        )
+    except Exception:
+        chars = 0
+    max_out: Any = params.get("max_completion_tokens") or params.get("max_tokens") or 1000
+    if not _is_number(max_out) or max_out <= 0:
+        max_out = 1000
+    cost = compute_cost_usd(
+        model, {"prompt_tokens": math.ceil(chars / 4), "completion_tokens": int(max_out)}, prices or DEFAULT_PRICES
+    )
+    return cost or 0.0
 
 
 def _to_utc(d: datetime) -> datetime:
@@ -186,6 +210,7 @@ class Guard:
         unknown_model: UnknownModelPolicy = "throw",
         fail_open: bool = True,
         now: Optional[Callable[[], datetime]] = None,
+        estimate_usd: Union[float, EstimateFn, None] = None,
     ) -> None:
         if not _is_number(downgrade_at) or not (0 <= downgrade_at <= 1):
             raise ValueError(f"llmbrake: downgrade_at must be a number between 0 and 1, got {downgrade_at!r}")
@@ -200,6 +225,7 @@ class Guard:
         self._unknown_model = unknown_model
         self._fail_open = fail_open
         self._now = now or _utcnow
+        self._estimate = estimate_usd
 
     # ------------------------------------------------------------------ pure helpers
     def _validate_budget(self, b: Any, ctx: CallContext) -> float:
@@ -228,6 +254,113 @@ class Guard:
         if self._unknown_model == "throw" and compute_cost_usd(effective, None, self._prices) is None:
             raise UnknownModelPriceError(effective)
         return Decision(period, budget, spent, effective, effective != model)
+
+    # ------------------------------------------------------------------ reserving stores
+    @property
+    def _reserving(self) -> bool:
+        return is_reserving_store(self._store)
+
+    def _hold_usd(self, ctx: CallContext, params: Mapping[str, Any]) -> float:
+        try:
+            if callable(self._estimate):
+                v: Any = self._estimate(ctx, params)
+            elif self._estimate is not None:
+                v = self._estimate
+            else:
+                v = estimate_call_usd(str(params.get("model")), params, self._prices)
+            return float(v) if _is_number(v) and math.isfinite(v) and v >= 0 else 0.0
+        except Exception:
+            return 0.0
+
+    def _after_reserve(self, ctx: CallContext, model: str, period: str, budget: float, r: Any) -> Decision:
+        spent = self._validate_spend(getattr(r, "spent_usd", None))
+        eff = getattr(r, "budget_usd", budget)
+        eff = float(eff) if _is_number(eff) and not math.isnan(eff) else budget
+        if not getattr(r, "allowed", False):
+            raise BudgetExceededError(ctx.customer_id, spent, eff, period)
+        effective = model
+        if eff != math.inf and spent >= eff * self._downgrade_at:
+            effective = self._downgrade_map.get(model) or model
+        if self._unknown_model == "throw" and compute_cost_usd(effective, None, self._prices) is None:
+            raise _ReleaseAndRaise(UnknownModelPriceError(effective), getattr(r, "hold_id", None), period)
+        return Decision(period, eff, spent, effective, effective != model, getattr(r, "hold_id", None))
+
+    def _reserve_check(self, ctx: CallContext, params: Mapping[str, Any], requested: str) -> Decision:
+        period = period_of(self._now())
+        budget = self._budget_for(ctx)
+        try:
+            r = self._store.reserve(
+                ctx.customer_id,
+                period,
+                hold_usd=self._hold_usd(ctx, params),
+                budget_usd=budget,
+                downgrade_at=self._downgrade_at,
+                stream=bool(params.get("stream")),
+            )
+            if inspect.isawaitable(r):
+                _discard(r)
+                raise TypeError(_ASYNC_IN_SYNC.format(what="store.reserve"))
+            self._validate_spend(getattr(r, "spent_usd", None))
+        except TypeError as e:
+            if "awaitable" in str(e):
+                raise
+            if self._fail_open:
+                return self._decide(ctx, requested, period, budget, 0.0)
+            raise
+        except Exception:
+            if self._fail_open:
+                return self._decide(ctx, requested, period, budget, 0.0)
+            raise
+        try:
+            return self._after_reserve(ctx, requested, period, budget, r)
+        except _ReleaseAndRaise as e:
+            self._release(ctx, e.period, e.hold_id)
+            raise e.error from None
+
+    async def _areserve_check(self, ctx: CallContext, params: Mapping[str, Any], requested: str) -> Decision:
+        period = period_of(self._now())
+        budget = await self._abudget_for(ctx)
+        try:
+            r = self._store.reserve(
+                ctx.customer_id,
+                period,
+                hold_usd=self._hold_usd(ctx, params),
+                budget_usd=budget,
+                downgrade_at=self._downgrade_at,
+                stream=bool(params.get("stream")),
+            )
+            if inspect.isawaitable(r):
+                r = await r
+            self._validate_spend(getattr(r, "spent_usd", None))
+        except Exception:
+            if self._fail_open:
+                return self._decide(ctx, requested, period, budget, 0.0)
+            raise
+        try:
+            return self._after_reserve(ctx, requested, period, budget, r)
+        except _ReleaseAndRaise as e:
+            await self._arelease(ctx, e.period, e.hold_id)
+            raise e.error from None
+
+    def _release(self, ctx: CallContext, period: str, hold_id: Optional[str]) -> None:
+        if not hold_id or not self._reserving:
+            return
+        try:
+            r = self._store.settle(hold_id, ctx.customer_id, period, cost_usd=0.0, downgraded=False)
+            if inspect.isawaitable(r):
+                _discard(r)
+        except Exception:
+            pass  # the hold expires on its own
+
+    async def _arelease(self, ctx: CallContext, period: str, hold_id: Optional[str]) -> None:
+        if not hold_id or not self._reserving:
+            return
+        try:
+            r = self._store.settle(hold_id, ctx.customer_id, period, cost_usd=0.0, downgraded=False)
+            if inspect.isawaitable(r):
+                await r
+        except Exception:
+            pass
 
     def _cost(self, d: Decision, resp_model: Optional[str], usage: Any) -> Optional[float]:
         # Price by the model the provider reports (dated snapshots resolve via lookup_price);
@@ -294,7 +427,20 @@ class Guard:
     ) -> UsageEvent:
         cost = self._cost(d, resp_model, usage)
         spent: Any = d.spent_usd
-        if cost is not None and cost > 0:
+        if d.hold_id and self._reserving:
+            try:
+                res = self._store.settle(
+                    d.hold_id, ctx.customer_id, d.period, cost_usd=cost or 0.0, downgraded=d.downgraded
+                )
+            except Exception:
+                if not self._fail_open:
+                    raise
+            else:
+                if inspect.isawaitable(res):
+                    _discard(res)
+                    raise TypeError(_ASYNC_IN_SYNC.format(what="store.settle"))
+                spent = res
+        elif cost is not None and cost > 0:
             try:
                 res = self._store.add_spend(ctx.customer_id, d.period, cost)
             except Exception:
@@ -350,7 +496,18 @@ class Guard:
     ) -> UsageEvent:
         cost = self._cost(d, resp_model, usage)
         spent: Any = d.spent_usd
-        if cost is not None and cost > 0:
+        if d.hold_id and self._reserving:
+            try:
+                res = self._store.settle(
+                    d.hold_id, ctx.customer_id, d.period, cost_usd=cost or 0.0, downgraded=d.downgraded
+                )
+                if inspect.isawaitable(res):
+                    res = await res
+                spent = res
+            except Exception:
+                if not self._fail_open:
+                    raise
+        elif cost is not None and cost > 0:
             try:
                 res = self._store.add_spend(ctx.customer_id, d.period, cost)
                 if inspect.isawaitable(res):
@@ -429,19 +586,27 @@ class Guard:
         ) -> Any:
             ctx = _make_ctx(customer_id, plan, feature)
             requested = _requested_model(params)
-            d = self._check(ctx, requested)
+            d = self._reserve_check(ctx, params, requested) if self._reserving else self._check(ctx, requested)
             final: Dict[str, Any] = {**params, "model": d.model}
             if params.get("stream"):
                 final["stream_options"] = {**(params.get("stream_options") or {}), "include_usage": True}
-                stream = create(*args, **final)
-                _ensure_sync(stream)
+                try:
+                    stream = create(*args, **final)
+                    _ensure_sync(stream)
+                except BaseException:
+                    self._release(ctx, d.period, d.hold_id)
+                    raise
 
                 def on_done(model: Optional[str], usage: Any) -> None:
                     self._record(ctx, d, requested, model, usage)
 
                 return GuardedStream(stream, on_done)
-            res = create(*args, **final)
-            _ensure_sync(res)
+            try:
+                res = create(*args, **final)
+                _ensure_sync(res)
+            except BaseException:
+                self._release(ctx, d.period, d.hold_id)
+                raise
             self._record(ctx, d, requested, _field(res, "model"), _field(res, "usage"))
             return res
 
@@ -460,21 +625,41 @@ class Guard:
         ) -> Any:
             ctx = _make_ctx(customer_id, plan, feature)
             requested = _requested_model(params)
-            d = await self._acheck(ctx, requested)
+            d = (
+                await self._areserve_check(ctx, params, requested)
+                if self._reserving
+                else await self._acheck(ctx, requested)
+            )
             final: Dict[str, Any] = {**params, "model": d.model}
             if params.get("stream"):
                 final["stream_options"] = {**(params.get("stream_options") or {}), "include_usage": True}
-                stream = await create(*args, **final)
+                try:
+                    stream = await create(*args, **final)
+                except BaseException:
+                    await self._arelease(ctx, d.period, d.hold_id)
+                    raise
 
                 async def on_done(model: Optional[str], usage: Any) -> None:
                     await self._arecord(ctx, d, requested, model, usage)
 
                 return GuardedAsyncStream(stream, on_done)
-            res = await create(*args, **final)
+            try:
+                res = await create(*args, **final)
+            except BaseException:
+                await self._arelease(ctx, d.period, d.hold_id)
+                raise
             await self._arecord(ctx, d, requested, _field(res, "model"), _field(res, "usage"))
             return res
 
         return guarded
+
+
+class _ReleaseAndRaise(Exception):
+    def __init__(self, error: Exception, hold_id: Optional[str], period: str) -> None:
+        super().__init__(str(error))
+        self.error = error
+        self.hold_id = hold_id
+        self.period = period
 
 
 def _ensure_sync(res: Any) -> None:
@@ -498,6 +683,7 @@ def create_guard(
     unknown_model: UnknownModelPolicy = "throw",
     fail_open: bool = True,
     now: Optional[Callable[[], datetime]] = None,
+    estimate_usd: Union[float, EstimateFn, None] = None,
 ) -> Guard:
     """Create a :class:`Guard`.
 
@@ -513,6 +699,8 @@ def create_guard(
         for unpriced models; ``"allow"`` lets them through and records ``cost_usd=None``.
     :param fail_open: If the store errors: ``True`` (default) lets calls through, ``False`` re-raises.
     :param now: Clock override for tests. Naive datetimes are treated as UTC.
+    :param estimate_usd: Reserving stores only (e.g. ``HostedStore``): the USD to hold while a call is in
+        flight, as a number or ``fn(ctx, params)``. Default: :func:`estimate_call_usd`.
     """
     return Guard(
         budget_usd,
@@ -524,4 +712,5 @@ def create_guard(
         unknown_model=unknown_model,
         fail_open=fail_open,
         now=now,
+        estimate_usd=estimate_usd,
     )

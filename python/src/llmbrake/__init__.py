@@ -4,9 +4,9 @@ Track cost, auto-downgrade near the cap, block at the cap. https://llmbrake.com
 """
 
 from ._errors import BudgetExceededError, LLMBrakeError, UnknownModelPriceError, is_budget_exceeded_error
-from ._guard import BudgetStatus, CallContext, Decision, Guard, UsageEvent, create_guard, period_of
+from ._guard import BudgetStatus, CallContext, Decision, Guard, UsageEvent, create_guard, estimate_call_usd, period_of
 from ._prices import DEFAULT_PRICES, ModelPrice, PriceTable, compute_cost_usd, lookup_price
-from ._store import AsyncUsageStore, MemoryStore, UsageStore
+from ._store import AsyncUsageStore, MemoryStore, Reservation, ReservingStore, UsageStore, is_reserving_store
 from ._stream import GuardedAsyncStream, GuardedStream
 from ._version import __version__
 
@@ -22,6 +22,10 @@ __all__ = [
     "UsageStore",
     "AsyncUsageStore",
     "MemoryStore",
+    "Reservation",
+    "ReservingStore",
+    "is_reserving_store",
+    "estimate_call_usd",
     "GuardedStream",
     "GuardedAsyncStream",
     "DEFAULT_PRICES",

@@ -1,6 +1,6 @@
 import { BudgetExceededError, UnknownModelPriceError } from "./errors.js";
 import { ChatUsage, DEFAULT_PRICES, PriceTable, computeCostUsd } from "./prices.js";
-import { MemoryStore, UsageStore } from "./store.js";
+import { MemoryStore, UsageStore, isReservingStore } from "./store.js";
 
 export interface CallContext {
   customerId: string;
@@ -45,6 +45,21 @@ export interface GuardOptions {
   failOpen?: boolean;
   /** Clock override for tests. */
   now?: () => Date;
+  /**
+   * Only used with a reserving store (e.g. HostedStore): the cost to hold while a call is in flight.
+   * Default: estimated from the prompt size (~4 chars/token) plus `max_completion_tokens`/`max_tokens`
+   * (or 1,000 output tokens) at the requested model's price.
+   */
+  estimateUsd?: number | ((ctx: CallContext, params: Record<string, unknown>) => number);
+}
+
+/** Rough upper-ish estimate of a call's cost, used only to size reservations. */
+export function estimateCallUsd(model: string, params: Record<string, unknown>, prices: PriceTable = DEFAULT_PRICES): number {
+  let chars = 0;
+  try { chars = JSON.stringify(params.messages ?? params.input ?? params.prompt ?? "").length; } catch { /* circular: ignore */ }
+  const maxOut = Number(params.max_completion_tokens ?? params.max_tokens ?? 1000);
+  const cost = computeCostUsd(model, { prompt_tokens: Math.ceil(chars / 4), completion_tokens: Number.isFinite(maxOut) && maxOut > 0 ? maxOut : 1000 }, prices);
+  return cost ?? 0;
 }
 
 type ChatParams = { model: string; stream?: boolean | null; stream_options?: Record<string, unknown> | null; [k: string]: unknown };
@@ -93,7 +108,50 @@ export function createGuard(opts: GuardOptions) {
     let effective = model;
     if (budget !== Infinity && spent >= budget * downgradeAt && downgradeMap[model]) effective = downgradeMap[model];
     if (unknownModel === "throw" && computeCostUsd(effective, {}, prices) === null) throw new UnknownModelPriceError(effective);
-    return { period, budget, spent, model: effective, downgraded: effective !== model };
+    return { period, budget, spent, model: effective, downgraded: effective !== model, holdId: null as string | null };
+  }
+
+  function decide(ctx: CallContext, model: string, period: string, budget: number, spent: number) {
+    if (spent >= budget) throw new BudgetExceededError(ctx.customerId, spent, budget, period);
+    let effective = model;
+    if (budget !== Infinity && spent >= budget * downgradeAt && downgradeMap[model]) effective = downgradeMap[model];
+    if (unknownModel === "throw" && computeCostUsd(effective, {}, prices) === null) throw new UnknownModelPriceError(effective);
+    return { period, budget, spent, model: effective, downgraded: effective !== model, holdId: null as string | null };
+  }
+
+  /** Reserving stores: atomic check-and-reserve before the call (see ReservingStore). */
+  async function reserveCheck(ctx: CallContext, params: ChatParams) {
+    const period = periodOf(now());
+    const budget = await budgetFor(ctx);
+    if (!isReservingStore(store)) throw new Error("unreachable");
+    let holdUsd = 0;
+    try {
+      holdUsd = typeof opts.estimateUsd === "function" ? opts.estimateUsd(ctx, params) : opts.estimateUsd ?? estimateCallUsd(params.model, params, prices);
+      if (!Number.isFinite(holdUsd) || holdUsd < 0) holdUsd = 0;
+    } catch { holdUsd = 0; }
+    let r: { allowed: boolean; spentUsd: number; budgetUsd: number; holdId: string | null };
+    try {
+      r = await store.reserve({ customerId: ctx.customerId, period, holdUsd, budgetUsd: budget, downgradeAt, stream: !!params.stream });
+      if (typeof r?.spentUsd !== "number" || !Number.isFinite(r.spentUsd)) throw new TypeError("llmbrake: store.reserve returned a non-numeric spentUsd");
+    } catch (e) {
+      if (!failOpen) throw e;
+      return decide(ctx, params.model, period, budget, 0);
+    }
+    const effBudget = typeof r.budgetUsd === "number" && !Number.isNaN(r.budgetUsd) ? r.budgetUsd : budget;
+    if (!r.allowed) throw new BudgetExceededError(ctx.customerId, r.spentUsd, effBudget, period);
+    // The server already admitted the call; only the downgrade and unknown-model rules apply here.
+    const model = params.model;
+    const effective = effBudget !== Infinity && r.spentUsd >= effBudget * downgradeAt && downgradeMap[model] ? downgradeMap[model] : model;
+    if (unknownModel === "throw" && computeCostUsd(effective, {}, prices) === null) {
+      await release(ctx, period, r.holdId);
+      throw new UnknownModelPriceError(effective);
+    }
+    return { period, budget: effBudget, spent: r.spentUsd, model: effective, downgraded: effective !== model, holdId: r.holdId };
+  }
+
+  async function release(ctx: CallContext, period: string, holdId: string | null) {
+    if (!holdId || !isReservingStore(store)) return;
+    try { await store.settle({ holdId, customerId: ctx.customerId, period, costUsd: 0, downgraded: false }); } catch { /* hold expires on its own */ }
   }
 
   async function record(ctx: CallContext, d: Awaited<ReturnType<typeof check>>, requestedModel: string, respModel: string | undefined, usage: ChatUsage | undefined) {
@@ -102,7 +160,10 @@ export function createGuard(opts: GuardOptions) {
     const priceModel = respModel && computeCostUsd(respModel, {}, prices) !== null ? respModel : d.model;
     const cost = computeCostUsd(priceModel, u, prices);
     let spent = d.spent;
-    if (cost !== null && cost > 0) {
+    if (d.holdId && isReservingStore(store)) {
+      try { spent = await store.settle({ holdId: d.holdId, customerId: ctx.customerId, period: d.period, costUsd: cost ?? 0, downgraded: d.downgraded }); }
+      catch (e) { if (!failOpen) throw e; }
+    } else if (cost !== null && cost > 0) {
       try { spent = await store.addSpend(ctx.customerId, d.period, cost); }
       catch (e) { if (!failOpen) throw e; }
     }
@@ -126,14 +187,18 @@ export function createGuard(opts: GuardOptions) {
     return async function guardedCreate(params: P, ctx: CallContext, ...rest: any[]): Promise<R> {
       if (!ctx?.customerId) throw new TypeError("llmbrake: ctx.customerId is required");
       const requestedModel = params.model;
-      const d = await check(ctx, requestedModel);
+      const d = isReservingStore(store) ? await reserveCheck(ctx, params) : await check(ctx, requestedModel);
       const finalParams = { ...params, model: d.model } as P;
       if (params.stream) {
         (finalParams as ChatParams).stream_options = { ...(params.stream_options ?? {}), include_usage: true };
-        const stream = (await createFn(finalParams, ...rest)) as unknown as AsyncIterable<any>;
+        let stream: AsyncIterable<any>;
+        try { stream = (await createFn(finalParams, ...rest)) as unknown as AsyncIterable<any>; }
+        catch (e) { await release(ctx, d.period, d.holdId); throw e; }
         return wrapStream(stream, (model, usage) => record(ctx, d, requestedModel, model, usage)) as unknown as R;
       }
-      const res: any = await createFn(finalParams, ...rest);
+      let res: any;
+      try { res = await createFn(finalParams, ...rest); }
+      catch (e) { await release(ctx, d.period, d.holdId); throw e; }
       await record(ctx, d, requestedModel, res?.model, res?.usage);
       return res as R;
     };

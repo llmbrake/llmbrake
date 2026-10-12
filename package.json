@@ -1,6 +1,6 @@
 {
   "name": "llmbrake",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Per-customer monthly USD budgets for OpenAI-compatible chat calls: track cost, auto-downgrade near the cap, block at the cap.",
   "license": "MIT",
   "author": "LLMBrake contributors",
