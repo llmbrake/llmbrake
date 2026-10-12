@@ -24,3 +24,23 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+
+  examples:
+    name: Examples (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            examples/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci
+        working-directory: examples
+      - run: npm test
+        working-directory: examples
+

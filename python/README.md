@@ -2,7 +2,7 @@
 
 **Per-customer cost caps for AI apps: put a monthly dollar budget on every customer, switch them to a cheaper model near the cap, and block them at the cap.**
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/llmbrake/llmbrake/blob/main/python/LICENSE)
 
 `llmbrake` is a small Python library that wraps your OpenAI-compatible `chat.completions.create` call (sync or async). It prices every call in USD from the token usage the provider returns and keeps a running monthly total per customer. Near a customer's budget it swaps in a cheaper model; at the budget it raises a typed `BudgetExceededError` before the request ever reaches the provider.
 
@@ -10,7 +10,7 @@
 - **Metadata only.** It never reads or stores prompts or completions, only customer ID, plan, feature tag, model, token counts, cost and timestamps.
 - **Zero runtime dependencies.** Python 3.9+, fully typed (`py.typed`), MIT licensed. Redis support is an optional extra.
 
-This is the Python port of the [TypeScript `llmbrake`](../README.md) package and behaves the same way. Status: `0.1.0`, early. Website: [llmbrake.com](https://llmbrake.com)
+This is the Python port of the [TypeScript `llmbrake`](https://github.com/llmbrake/llmbrake#readme) package and behaves the same way. Status: `0.1.0`, early. Website: [llmbrake.com](https://llmbrake.com)
 
 ## Install
 
@@ -184,4 +184,4 @@ The tests use fake providers and a mocked HTTP transport; they never touch the n
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/llmbrake/llmbrake/blob/main/python/LICENSE)

@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Added
 
+- `examples/` with tested integrations for the Vercel AI SDK (`generateText`/`streamText`), OpenRouter and LangChain.js, run in CI on Node 22 against mock providers.
 - Python port in `python/` (`llmbrake` 0.1.0 for Python, not yet on PyPI) with its own CI workflow. See [python/CHANGELOG.md](python/CHANGELOG.md).
 
 ### Changed

@@ -88,6 +88,16 @@ With `stream: true`, `llmbrake` sets `stream_options.include_usage = true` and r
 
 Any `create(params)` function that accepts `{ model, ... }` and returns `{ model, usage: { prompt_tokens, completion_tokens } }` works, for example OpenRouter, Anthropic's OpenAI-compatible endpoint and local gateways. Add their model IDs to the price table.
 
+## Examples: Vercel AI SDK, OpenRouter, LangChain
+
+Tested integrations live in [`examples/`](examples/):
+
+- **[Vercel AI SDK](examples/vercel-ai-sdk/)**: `guard.check()` before `generateText` / `streamText`, then charge from `result.usage` (cached tokens included). Also has a Next.js route handler sketch.
+- **[OpenRouter](examples/openrouter/)**: `guard.wrap()` on the OpenAI SDK pointed at OpenRouter, with OpenRouter model IDs in the price table.
+- **[LangChain.js](examples/langchain/)**: `guard.check()` before `invoke()`, then charge from `AIMessage.usage_metadata`.
+
+CI runs them against mock providers (no API keys).
+
 ## Storage (Redis example)
 
 The default `MemoryStore` keeps totals in process memory: fine for one server, tests and demos, but lost on restart and not shared between instances. For multiple instances or serverless, implement the two-method `UsageStore` interface. With [ioredis](https://github.com/redis/ioredis):
