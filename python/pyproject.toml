@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llmbrake"
+dynamic = ["version"]
+description = "Per-customer monthly USD budgets for OpenAI-compatible chat calls: track cost, auto-downgrade near the cap, block at the cap."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "LLMBrake contributors" }]
+keywords = ["openai", "anthropic", "llm", "ai", "cost", "budget", "usage", "quota", "rate-limit", "saas"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+redis = ["redis>=4.2"]
+
+[project.urls]
+Homepage = "https://llmbrake.com"
+Source = "https://github.com/llmbrake/llmbrake"
+Issues = "https://github.com/llmbrake/llmbrake/issues"
+Changelog = "https://github.com/llmbrake/llmbrake/blob/main/python/CHANGELOG.md"
+
+[dependency-groups]
+dev = ["pytest>=7", "fakeredis>=2.20", "openai>=1.40", "httpx", "ruff", "mypy"]
+
+[tool.hatch.version]
+path = "src/llmbrake/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llmbrake"]
+# 2.4 = PEP 639 license metadata; widely accepted by twine/PyPI
+core-metadata-version = "2.4"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
+include = ["src/llmbrake", "tests", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.mypy]
+strict = true
+python_version = "3.10"
+files = ["src/llmbrake"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]

@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+### Added
+
+- Python port in `python/` (`llmbrake` 0.1.0 for Python, not yet on PyPI) with its own CI workflow. See [python/CHANGELOG.md](python/CHANGELOG.md).
+
 ### Changed
 
 - Docs: install from npm (`npm install llmbrake`) and add an npm version badge.

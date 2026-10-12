@@ -167,6 +167,18 @@ Dated snapshot IDs such as `gpt-5.4-mini-2026-03-17` fall back to the undated en
 - **Streaming needs usage.** If a provider ignores `include_usage`, or a stream is abandoned before the usage chunk arrives, that call is recorded with zero cost.
 - **UTC calendar months.** Budget periods reset at 00:00 UTC on the 1st.
 
+## Python
+
+A Python port with the same behavior lives in [`python/`](python/README.md): sync and async `openai` clients, streaming, pluggable stores (in-memory, Redis), zero required dependencies, Python 3.9+.
+
+`pip install llmbrake` is coming soon to PyPI. For now, install from GitHub:
+
+```bash
+pip install "git+https://github.com/llmbrake/llmbrake#subdirectory=python"
+```
+
+See [python/README.md](python/README.md) for the quickstart.
+
 ## Hosted dashboard (coming)
 
 The library is free and stays MIT licensed. We're building an optional hosted dashboard on top of it: cost per customer, feature and model, shared counters, alerts near and at caps, and AI cost vs. Stripe revenue per customer. It is **not available yet**; join the waitlist at [llmbrake.com](https://llmbrake.com).
