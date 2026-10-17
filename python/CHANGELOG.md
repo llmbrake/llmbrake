@@ -2,6 +2,12 @@
 
 All notable changes to the Python package are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - Unreleased
+
+### Changed
+
+- Default price table re-checked on 2026-10-17 and extended with `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` (matches the TypeScript package 0.2.1).
+
 ## [0.2.0] - Unreleased
 
 ### Added
