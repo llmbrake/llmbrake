@@ -3,13 +3,14 @@
 Default price table, USD per 1M tokens, standard (non-batch, short-context) tier.
 
 .. warning::
-   NEEDS VERIFICATION before production use. Provider prices change often.
-   Values were read on 2026-10-09 from:
+   Provider prices change often; check them before relying on a cap in production.
+   Values were last checked on 2026-10-17 against:
 
    - OpenAI:    https://developers.openai.com/api/docs/pricing
    - Anthropic: https://docs.anthropic.com/en/docs/about-claude/pricing
 
-   Anthropic model IDs below are illustrative; confirm the exact IDs your endpoint accepts.
+   Anthropic IDs for the current generation were checked against the models overview page (2026-10-17).
+   Claude Haiku 5.5 is priced at its prompts-up-to-100K tier.
    Long-context, batch, regional/data-residency uplifts and fast/priority tiers are NOT modeled.
    Override or extend via ``create_guard(prices={**DEFAULT_PRICES, **yours})``.
 """
@@ -41,20 +42,29 @@ class ModelPrice:
 
 PriceTable = Mapping[str, ModelPrice]
 
-_OPENAI = "https://developers.openai.com/api/docs/pricing (read 2026-10-09, verify)"
-_ANTHROPIC = "https://docs.anthropic.com/en/docs/about-claude/pricing (read 2026-10-09, verify)"
+_OPENAI = "https://developers.openai.com/api/docs/pricing (checked 2026-10-17, verify for production)"
+_ANTHROPIC = "https://docs.anthropic.com/en/docs/about-claude/pricing (checked 2026-10-17, verify for production)"
 
 #: Read-only default table. Copy it to extend: ``{**DEFAULT_PRICES, "my-model": ModelPrice(1, 3)}``.
 DEFAULT_PRICES: PriceTable = MappingProxyType(
     {
+        "gpt-6-astra": ModelPrice(10.0, 50.0, cached_input_per_mtok=1.0, source=_OPENAI),
+        "gpt-6-sol": ModelPrice(2.0, 10.0, cached_input_per_mtok=0.2, source=_OPENAI),
         "gpt-6.1-sol": ModelPrice(2.0, 10.0, cached_input_per_mtok=0.1, source=_OPENAI),
         "gpt-6-luna": ModelPrice(0.1, 0.5, cached_input_per_mtok=0.01, source=_OPENAI),
+        "gpt-5.6-sol": ModelPrice(4.0, 20.0, cached_input_per_mtok=0.4, source=_OPENAI),
+        "gpt-5.6-terra": ModelPrice(2.0, 12.0, cached_input_per_mtok=0.2, source=_OPENAI),
+        "gpt-5.6-luna": ModelPrice(0.2, 1.2, cached_input_per_mtok=0.02, source=_OPENAI),
         "gpt-5.5": ModelPrice(5.0, 30.0, cached_input_per_mtok=0.5, source=_OPENAI),
         "gpt-5.4": ModelPrice(2.5, 15.0, cached_input_per_mtok=0.25, source=_OPENAI),
         "gpt-5.4-mini": ModelPrice(0.75, 4.5, cached_input_per_mtok=0.075, source=_OPENAI),
         "gpt-5.4-nano": ModelPrice(0.2, 1.25, cached_input_per_mtok=0.02, source=_OPENAI),
         "gpt-4.1-mini": ModelPrice(0.4, 1.6, cached_input_per_mtok=0.1, source=_OPENAI),
         "gpt-4o-mini": ModelPrice(0.15, 0.6, cached_input_per_mtok=0.075, source=_OPENAI),
+        "claude-fable-5-1": ModelPrice(10.0, 50.0, cached_input_per_mtok=0.25, source=_ANTHROPIC),
+        "claude-opus-5-5": ModelPrice(4.0, 20.0, cached_input_per_mtok=0.2, source=_ANTHROPIC),
+        "claude-sonnet-5-5": ModelPrice(2.0, 10.0, cached_input_per_mtok=0.1, source=_ANTHROPIC),
+        "claude-haiku-5-5": ModelPrice(0.1, 0.5, cached_input_per_mtok=0.01, source=_ANTHROPIC),
         "claude-opus-4-8": ModelPrice(5.0, 25.0, cached_input_per_mtok=0.5, source=_ANTHROPIC),
         "claude-sonnet-5": ModelPrice(2.0, 10.0, cached_input_per_mtok=0.2, source=_ANTHROPIC),
         "claude-haiku-4-5": ModelPrice(1.0, 5.0, cached_input_per_mtok=0.1, source=_ANTHROPIC),

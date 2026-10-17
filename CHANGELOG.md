@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+### Changed
+
+- Default price table re-checked against the OpenAI and Anthropic pricing pages on 2026-10-17 (all existing entries unchanged) and extended with current models: `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` (TypeScript and Python). Previously these threw `UnknownModelPriceError` by default.
+
 ## [0.2.0] - Unreleased
 
 ### Added
