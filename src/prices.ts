@@ -6,8 +6,8 @@
  *   - OpenAI:    https://developers.openai.com/api/docs/pricing
  *   - Anthropic: https://docs.anthropic.com/en/docs/about-claude/pricing
  * Anthropic IDs for the current generation were checked against the models overview page (2026-10-17).
- * Claude Haiku 5.5 is priced at its prompts-up-to-100K tier.
- * Long-context, batch, regional/data-residency uplifts and fast/priority tiers are NOT modeled.
+ * Claude Haiku 5.5: short tier by default; computeCostUsd auto-selects `claude-haiku-5-5:long` when prompt_tokens > 100K.
+ * Batch, regional/data-residency uplifts and fast/priority tiers are NOT modeled.
  * Override or extend via `createGuard({ prices: { ...DEFAULT_PRICES, ...yours } })`.
  */
 export interface ModelPrice {
@@ -44,6 +44,8 @@ export const DEFAULT_PRICES: PriceTable = {
   "claude-opus-5-5": { inputPerMTok: 4.0, cachedInputPerMTok: 0.2, outputPerMTok: 20.0, source: ANTHROPIC },
   "claude-sonnet-5-5": { inputPerMTok: 2.0, cachedInputPerMTok: 0.1, outputPerMTok: 10.0, source: ANTHROPIC },
   "claude-haiku-5-5": { inputPerMTok: 0.1, cachedInputPerMTok: 0.01, outputPerMTok: 0.5, source: ANTHROPIC },
+  // Prompts over 100K tokens (cache reads/writes count toward the threshold); whole request billed at this tier.
+  "claude-haiku-5-5:long": { inputPerMTok: 0.5, cachedInputPerMTok: 0.05, outputPerMTok: 2.5, source: ANTHROPIC },
   "claude-opus-4-8": { inputPerMTok: 5.0, cachedInputPerMTok: 0.5, outputPerMTok: 25.0, source: ANTHROPIC },
   "claude-sonnet-5": { inputPerMTok: 2.0, cachedInputPerMTok: 0.2, outputPerMTok: 10.0, source: ANTHROPIC },
   "claude-haiku-4-5": { inputPerMTok: 1.0, cachedInputPerMTok: 0.1, outputPerMTok: 5.0, source: ANTHROPIC },
@@ -58,9 +60,14 @@ export interface ChatUsage {
 
 /** Returns USD cost, or null if the model is not in the table. */
 export function computeCostUsd(model: string, usage: ChatUsage, prices: PriceTable): number | null {
-  const p = lookupPrice(model, prices);
-  if (!p) return null;
   const prompt = usage.prompt_tokens ?? 0;
+  // Haiku 5.5 bills the whole request at the >100K tier once total input crosses 100K.
+  const pricedModel =
+    (model === "claude-haiku-5-5" || model.startsWith("claude-haiku-5-5-")) && prompt > 100_000
+      ? "claude-haiku-5-5:long"
+      : model;
+  const p = lookupPrice(pricedModel, prices);
+  if (!p) return null;
   const cached = Math.min(usage.prompt_tokens_details?.cached_tokens ?? 0, prompt);
   const uncached = prompt - cached;
   const out = usage.completion_tokens ?? 0;

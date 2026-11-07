@@ -194,3 +194,16 @@ test("streaming: early break still records usage received so far", async () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].costUsd, 1);
 });
+
+test("haiku long tier auto-selects when prompt_tokens > 100K", () => {
+  // short: 50k * 0.1 + 10k * 0.5 = 0.005 + 0.005 = 0.01
+  const short = computeCostUsd("claude-haiku-5-5", { prompt_tokens: 50_000, completion_tokens: 10_000 }, DEFAULT_PRICES)!;
+  assert.ok(Math.abs(short - 0.01) < 1e-12, String(short));
+  // long: 150k * 0.5 + 10k * 2.5 = 0.075 + 0.025 = 0.1
+  const long = computeCostUsd("claude-haiku-5-5", { prompt_tokens: 150_000, completion_tokens: 10_000 }, DEFAULT_PRICES)!;
+  assert.ok(Math.abs(long - 0.1) < 1e-12, String(long));
+  // explicit :long key still works
+  const explicit = computeCostUsd("claude-haiku-5-5:long", { prompt_tokens: 150_000, completion_tokens: 10_000 }, DEFAULT_PRICES)!;
+  assert.ok(Math.abs(explicit - 0.1) < 1e-12, String(explicit));
+});
+

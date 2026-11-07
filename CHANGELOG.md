@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.2
+
+- `computeCostUsd` auto-selects `claude-haiku-5-5:long` when `prompt_tokens` > 100K (Anthropic bills the whole request at the long-context tier once total input crosses that threshold). Short-tier rates stay the default under 100K.
+
 ## [Unreleased]
 
 ## [0.2.1] - 2026-10-17
