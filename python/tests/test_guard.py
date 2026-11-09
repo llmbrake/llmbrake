@@ -28,6 +28,29 @@ def test_compute_cost_handles_cached_tokens_and_dated_snapshots():
     assert compute_cost_usd("nope", {}, PRICES) is None
 
 
+def test_haiku_long_tier_auto_selects_when_prompt_tokens_over_100k():
+    # short: 50k * 0.1 + 10k * 0.5 = 0.005 + 0.005 = 0.01
+    short = compute_cost_usd(
+        "claude-haiku-5-5",
+        {"prompt_tokens": 50_000, "completion_tokens": 10_000},
+        DEFAULT_PRICES,
+    )
+    assert short == pytest.approx(0.01)
+    # long: 150k * 0.5 + 10k * 2.5 = 0.075 + 0.025 = 0.1
+    long = compute_cost_usd(
+        "claude-haiku-5-5",
+        {"prompt_tokens": 150_000, "completion_tokens": 10_000},
+        DEFAULT_PRICES,
+    )
+    assert long == pytest.approx(0.1)
+    explicit = compute_cost_usd(
+        "claude-haiku-5-5:long",
+        {"prompt_tokens": 150_000, "completion_tokens": 10_000},
+        DEFAULT_PRICES,
+    )
+    assert explicit == pytest.approx(0.1)
+
+
 def test_default_price_table_entries_all_cite_a_source():
     for m, p in DEFAULT_PRICES.items():
         assert p.source, f"{m} missing source"

@@ -6,6 +6,7 @@ All notable changes to the Python package are documented here. The format is bas
 
 ### Changed
 
+- `compute_cost_usd` auto-selects `claude-haiku-5-5:long` when `prompt_tokens` > 100K (matches the TypeScript package 0.2.2). Short-tier rates stay the default under 100K.
 - Default price table re-checked on 2026-10-17 and extended with `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` (matches the TypeScript package 0.2.1).
 
 ## [0.2.0] - Unreleased

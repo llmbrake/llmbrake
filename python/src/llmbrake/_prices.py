@@ -10,8 +10,8 @@ Default price table, USD per 1M tokens, standard (non-batch, short-context) tier
    - Anthropic: https://docs.anthropic.com/en/docs/about-claude/pricing
 
    Anthropic IDs for the current generation were checked against the models overview page (2026-10-17).
-   Claude Haiku 5.5 is priced at its prompts-up-to-100K tier.
-   Long-context, batch, regional/data-residency uplifts and fast/priority tiers are NOT modeled.
+   Claude Haiku 5.5: short tier by default; compute_cost_usd auto-selects ``claude-haiku-5-5:long`` when prompt_tokens > 100K.
+   Batch, regional/data-residency uplifts and fast/priority tiers are NOT modeled.
    Override or extend via ``create_guard(prices={**DEFAULT_PRICES, **yours})``.
 """
 
@@ -65,6 +65,8 @@ DEFAULT_PRICES: PriceTable = MappingProxyType(
         "claude-opus-5-5": ModelPrice(4.0, 20.0, cached_input_per_mtok=0.2, source=_ANTHROPIC),
         "claude-sonnet-5-5": ModelPrice(2.0, 10.0, cached_input_per_mtok=0.1, source=_ANTHROPIC),
         "claude-haiku-5-5": ModelPrice(0.1, 0.5, cached_input_per_mtok=0.01, source=_ANTHROPIC),
+        # Prompts over 100K tokens (cache reads/writes count toward the threshold); whole request billed at this tier.
+        "claude-haiku-5-5:long": ModelPrice(0.5, 2.5, cached_input_per_mtok=0.05, source=_ANTHROPIC),
         "claude-opus-4-8": ModelPrice(5.0, 25.0, cached_input_per_mtok=0.5, source=_ANTHROPIC),
         "claude-sonnet-5": ModelPrice(2.0, 10.0, cached_input_per_mtok=0.2, source=_ANTHROPIC),
         "claude-haiku-4-5": ModelPrice(1.0, 5.0, cached_input_per_mtok=0.1, source=_ANTHROPIC),
@@ -110,11 +112,17 @@ def compute_cost_usd(model: str, usage: Any, prices: PriceTable) -> Optional[flo
 
     ``usage`` may be a dict or an object with OpenAI chat-completions usage fields
     (``prompt_tokens``, ``completion_tokens``, ``prompt_tokens_details.cached_tokens``), or None.
+
+    Claude Haiku 5.5 bills the whole request at the >100K tier once total input
+    crosses that threshold, so ``claude-haiku-5-5`` (and dated snapshots) auto-select
+    ``claude-haiku-5-5:long`` when ``prompt_tokens`` > 100K.
     """
+    prompt, out, cached = usage_tokens(usage)
+    if (model == "claude-haiku-5-5" or model.startswith("claude-haiku-5-5-")) and prompt > 100_000:
+        model = "claude-haiku-5-5:long"
     p = lookup_price(model, prices)
     if p is None:
         return None
-    prompt, out, cached = usage_tokens(usage)
     cached = min(cached, prompt)
     uncached = prompt - cached
     cached_rate = p.input_per_mtok if p.cached_input_per_mtok is None else p.cached_input_per_mtok
